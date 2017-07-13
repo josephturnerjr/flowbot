@@ -3,6 +3,7 @@ import json
 import datetime
 import os
 import sys
+import random
 
 
 STREAM_URL = "https://stream.flowdock.com/flows/%s/%s"
@@ -10,24 +11,83 @@ POST_URL = "https://api.flowdock.com/flows/%s/%s/messages"
 
 
 class Plugin:
-    BOT_PREFIX = "rbot:"
+    BOT_NAME = "rbot"
+    BOT_PREFIX = "%s:" % BOT_NAME
 
     def __init__(self):
         pass
 
-    def handle_message(self, msg):
+    def help(self):
         pass
 
-    def is_direct_address(self, msg):
-        return msg.get('event', '') == "message" and msg.get('content', '').startswith(self.BOT_PREFIX)
+    def handle_message(self, msg):
+        # Don't look at anonymous messages (e.g., rbot messages)
+        if msg.get('external_user_name') == None:
+            # Handle direct-to-channel postings
+            if msg.get('event', '') == "message":
+                return self.handle_content(msg['content'])
+        
+    def is_direct_address(self, content):
+        return content.startswith(self.BOT_PREFIX)
 
-    def get_direct_content(self, msg):
-        if self.is_direct_address(msg):
-            return msg['content'][len(self.BOT_PREFIX):].strip()
+    def get_direct_content(self, content):
+        if self.is_direct_address(content):
+            return content[len(self.BOT_PREFIX):].strip()
+
+
+class ResponderPlugin(Plugin):
+    RESPONSES_FILE = "responder_plugin.json"
+
+    def __init__(self):
+        self.responses = self.load_responses()
+
+    def load_responses(self):
+        try:
+            with open(self.RESPONSES_FILE) as f:
+                return json.load(f)
+        except FileNotFoundError as e:
+            return {}
+            
+    def save_responses(self):
+        with open(self.RESPONSES_FILE, 'w') as f:
+            json.dump(self.responses, f)
+
+    def handle_content(self, msg):
+        direct = self.get_direct_content(msg)
+        if direct:
+            tokens = direct.split()
+            if tokens[0] == "reply":
+                if tokens[1] == "add":
+                    fields = " ".join(tokens[2:]).split("||")
+                    if len(fields) in [2,3]:
+                        if len(fields) == 2:
+                            prob = 1.0
+                        else:
+                            prob = float(fields[2])
+                        before = fields[0].strip()
+                        after = fields[1].strip()
+                        self.responses[before] = (after, prob)
+                        self.save_responses()
+                        return "Ok, I'll reply to %s with %s (%s%%)" % (before, after, 100 * prob)
+                elif tokens[1] == "delete":
+                    k = " ".join(tokens[2:])
+                    if k in self.responses:
+                        del self.responses[k]
+                        self.save_responses()
+                        return "Ok, yolo"
+                elif tokens[1] == "list":
+                    return str(self.responses)
+        else:
+            for k in self.responses:
+                if k in msg:
+                    resp, prob = self.responses[k]
+                    r = random.random()
+                    if r < prob:
+                        return resp
 
 
 class TimePlugin(Plugin):
-    def handle_message(self, msg):
+    def handle_content(self, msg):
         if self.is_direct_address(msg):
             if self.get_direct_content(msg) == "time":
                 return str(datetime.datetime.now())
@@ -38,7 +98,7 @@ class Bot:
         self.plugins = self.load_plugins()
 
     def load_plugins(self):
-        return [TimePlugin()]
+        return [TimePlugin(), ResponderPlugin()]
 
     def handle_message(self, msg):
         for plugin in self.plugins:
