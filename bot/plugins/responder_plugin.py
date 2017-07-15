@@ -1,5 +1,6 @@
 from .plugin import Plugin
 import json
+import random
 
 
 class ResponderPlugin(Plugin):

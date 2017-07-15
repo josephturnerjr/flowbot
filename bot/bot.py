@@ -5,6 +5,9 @@ import importlib
 class Bot:
     def __init__(self):
         self.plugins = self.load_plugins()
+        print("Loaded these plugins:")
+        for plugin in self.plugins:
+            print(plugin)
 
     def load_plugins(self):
         files = os.listdir(os.path.join(os.path.dirname(__file__), "plugins"))
